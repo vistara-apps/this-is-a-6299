@@ -33,27 +33,45 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: build
-    if: ${{ secrets.VERCEL_TOKEN != '' }}
     steps:
+    - name: Check deployment requirements
+      id: check-deploy
+      run: |
+        if [ -z "${{ secrets.VERCEL_TOKEN }}" ] || [ -z "${{ secrets.VERCEL_ORG_ID }}" ] || [ -z "${{ secrets.VERCEL_PROJECT_ID }}" ]; then
+          echo "deploy=false" >> $GITHUB_OUTPUT
+          echo "⚠️ Skipping deployment - Vercel secrets not configured"
+          echo "To enable deployment, configure the following secrets:"
+          echo "- VERCEL_TOKEN"
+          echo "- VERCEL_ORG_ID" 
+          echo "- VERCEL_PROJECT_ID"
+        else
+          echo "deploy=true" >> $GITHUB_OUTPUT
+          echo "✅ All Vercel secrets are configured"
+        fi
+        
     - name: Checkout code
+      if: steps.check-deploy.outputs.deploy == 'true'
       uses: actions/checkout@v4
       
     - name: Setup Node.js
+      if: steps.check-deploy.outputs.deploy == 'true'
       uses: actions/setup-node@v4
       with:
         node-version: '22'
         cache: 'npm'
         
     - name: Install dependencies
+      if: steps.check-deploy.outputs.deploy == 'true'
       run: npm ci
 
     - name: Build application
+      if: steps.check-deploy.outputs.deploy == 'true'
       run: npm run build
       env:
         NODE_OPTIONS: --max-old-space-size=4096
         
     - name: Deploy to Vercel (Production)
-      if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+      if: steps.check-deploy.outputs.deploy == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
       uses: amondnet/vercel-action@v25
       with:
         vercel-token: ${{ secrets.VERCEL_TOKEN }}
@@ -62,7 +80,7 @@ jobs:
         vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
         
     - name: Deploy to Vercel (Preview)
-      if: github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master'
+      if: steps.check-deploy.outputs.deploy == 'true' && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master'
       uses: amondnet/vercel-action@v25
       with:
         vercel-token: ${{ secrets.VERCEL_TOKEN }}
@@ -71,7 +89,7 @@ jobs:
         vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
         
     - name: Comment PR with deployment URL
-      if: github.event_name == 'pull_request'
+      if: steps.check-deploy.outputs.deploy == 'true' && github.event_name == 'pull_request'
       uses: actions/github-script@v7
       with:
         script: |
